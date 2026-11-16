@@ -1,0 +1,20 @@
+{
+  "venvPath": "ai-has/backend",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "include": [
+    "ai-has/backend/app",
+    "ai-has/tests"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "**/.next"
+  ],
+  "extraPaths": [
+    "ai-has/backend"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}

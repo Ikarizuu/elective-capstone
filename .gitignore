@@ -26,3 +26,4 @@ ai-has/backend/data/
 .DS_Store
 Thumbs.db
 *.log
+.vscode/
