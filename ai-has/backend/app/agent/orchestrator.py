@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
@@ -25,6 +26,8 @@ from app.database import AuditLog, ChatMessage, ChatSession, MetricRecord, utcno
 from app.guardrails.injection import inspect_prompt_injection
 from app.guardrails.pii import scrub_pii
 from app.rag.retriever import CitationResult, HybridRetriever
+
+logger = logging.getLogger("ai_has.orchestrator")
 
 _WORD_RE = re.compile(r"[a-z0-9]{3,}")
 
@@ -613,6 +616,10 @@ async def stream_chat_turn(
             )
             llm_mode = "openai"
         except Exception:
+            logger.exception(
+                "OpenAI orchestration failed; serving deterministic fallback [session_id=%s]",
+                session.id,
+            )
             intent, response_text, tool_calls = await _run_deterministic_fallback(
                 redacted_query=safe_user_content,
                 citations=citations,
