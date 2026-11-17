@@ -161,7 +161,10 @@ From `Elective-Capstone/ai-has` (with the backend venv activated):
 
 ```bash
 # Run full unit + integration + 19-case synthetic evaluation suite
-pytest tests/test_rag_and_guardrails.py -v
+pytest tests -v
+
+# Offline evaluation (retrieval Hit@k/MRR, pipeline accuracy, latency) -> docs/EVALUATION.md
+python tests/evaluate.py
 
 # Run concurrent latency & throughput benchmark (requires backend running on port 8000)
 python tests/load_test.py --base-url http://localhost:8000 --requests 30 --concurrency 6

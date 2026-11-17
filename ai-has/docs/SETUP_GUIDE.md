@@ -97,6 +97,12 @@ cd ai-has
 backend/.venv/Scripts/python.exe -m pytest tests/test_rag_and_guardrails.py -v
 ```
 
+### Evaluation Harness (retrieval, pipeline accuracy, latency, quality gates)
+```bash
+python tests/evaluate.py          # writes docs/EVALUATION.md; exits non-zero if a gate fails
+```
+Runs fully offline and in-process. CI runs it on every push (`.github/workflows/ci.yml`).
+
 ### Concurrent Latency & Throughput Benchmark
 With the backend running on port 8000:
 ```bash
