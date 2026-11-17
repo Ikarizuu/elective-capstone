@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import MarkdownText from "./MarkdownText";
 import {
   Bot,
   Headphones,
@@ -419,9 +420,13 @@ export function ChatWidget({
                   {msg.latency_ms ? <span>{Math.round(msg.latency_ms)} ms</span> : null}
                 </div>
 
-                <div className="whitespace-pre-wrap leading-relaxed">
-                  {msg.content || (streaming && !isUser ? "Thinking..." : "")}
-                </div>
+                {isUser ? (
+                  <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                ) : (
+                  <MarkdownText>
+                    {msg.content || (streaming ? "Thinking..." : "")}
+                  </MarkdownText>
+                )}
 
                 {msg.pii_redacted && (
                   <div className="mt-1.5 inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[10px]">

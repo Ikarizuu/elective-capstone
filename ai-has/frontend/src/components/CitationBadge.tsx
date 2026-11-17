@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { Citation } from "@/lib/api";
+import MarkdownText from "./MarkdownText";
 
 export function CitationBadgeList({ citations }: { citations: Citation[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -61,9 +62,9 @@ export function CitationBadgeList({ citations }: { citations: Citation[] }) {
               {Math.round(activeCitation.bm25_score * 100)}% · File: {activeCitation.filename}
             </span>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed text-slate-700">
-            {activeCitation.excerpt}
-          </p>
+          <div className="text-slate-700">
+            <MarkdownText>{activeCitation.excerpt}</MarkdownText>
+          </div>
         </div>
       )}
     </div>

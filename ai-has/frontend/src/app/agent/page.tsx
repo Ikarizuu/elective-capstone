@@ -25,6 +25,7 @@ import {
   updateTicket,
 } from "@/lib/api";
 import { useRole } from "@/components/RoleSwitcher";
+import MarkdownText from "@/components/MarkdownText";
 
 export default function AgentConsolePage() {
   const { role, persona, setRole } = useRole();
@@ -338,7 +339,7 @@ export default function AgentConsolePage() {
                             ? selectedSession.user_email
                             : "AI-HAS Assistant"}
                         </div>
-                        <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                        {isUser ? <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div> : <MarkdownText>{msg.content}</MarkdownText>}
                       </div>
                     </div>
                   );
