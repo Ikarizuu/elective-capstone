@@ -215,6 +215,6 @@ erDiagram
 ---
 
 ## 4. Enterprise Security Guardrails
-- **RBAC Enforcement:** Every endpoint verifies either a signed `HS256` JWT Bearer token (`Authorization: Bearer <token>`) or local dev headers (`X-User-Role`, `X-User-Email`) when `ALLOW_HEADER_ROLE_AUTH=true`. Unauthorized attempts generate `rbac_denied` audit entries and HTTP `403`.
+- **RBAC Enforcement:** Every endpoint verifies either a signed `HS256` JWT Bearer token (`Authorization: Bearer <token>`) or, **in demo mode only** (`ALLOW_HEADER_ROLE_AUTH=true`, off by default in code), local dev headers (`X-User-Role`, `X-User-Email`). The unauthenticated `/api/auth/token` minter is likewise demo-only, and the backend refuses to start with the shipped default `JWT_SECRET` / `WEBHOOK_SIGNING_SECRET` unless demo mode is on. Unauthorized attempts generate `rbac_denied` audit entries and HTTP `403`.
 - **PII & Secret Scrubbing:** SSNs, Luhn-valid credit cards, IPv4 addresses, phone numbers, email addresses, API keys (`sk-`, `ghp_`, `AKIA`, `xox*`), and inline credentials (`password=...`) are scrubbed prior to OpenAI transmission and SQLite/PostgreSQL storage.
 - **Prompt Injection Defense:** NFKC Unicode normalization, zero-width character stripping, Base64 payload decoding, and weighted regex heuristics block instruction overrides, DAN jailbreaks, template delimiter spoofing, and secret exfiltration.

@@ -11,6 +11,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 
+# Shipped placeholder secrets. Startup refuses these unless demo mode is explicitly enabled.
+DEFAULT_JWT_SECRET = "ai-has-enterprise-dev-secret-change-in-production"
+DEFAULT_WEBHOOK_SECRET = "ai-has-webhook-hmac-secret"
+
 
 def _default_kb_dir() -> str:
     candidates = [
@@ -56,12 +60,10 @@ class Settings(BaseSettings):
     )
 
     # Auth & RBAC
-    jwt_secret: str = Field(
-        default="ai-has-enterprise-dev-secret-change-in-production",
-        alias="JWT_SECRET",
-    )
+    jwt_secret: str = Field(default=DEFAULT_JWT_SECRET, alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    allow_header_role_auth: bool = Field(default=True, alias="ALLOW_HEADER_ROLE_AUTH")
+    # DEMO ONLY: trusts X-User-Role headers and enables the unauthenticated /api/auth/token minter.
+    allow_header_role_auth: bool = Field(default=False, alias="ALLOW_HEADER_ROLE_AUTH")
 
     # Webhooks
     webhook_timeout_seconds: float = Field(default=8.0, alias="WEBHOOK_TIMEOUT_SECONDS")
@@ -69,8 +71,16 @@ class Settings(BaseSettings):
     servicenow_webhook_url: str = Field(default="", alias="SERVICENOW_WEBHOOK_URL")
     n8n_webhook_url: str = Field(default="", alias="N8N_WEBHOOK_URL")
     webhook_signing_secret: str = Field(
-        default="ai-has-webhook-hmac-secret", alias="WEBHOOK_SIGNING_SECRET"
+        default=DEFAULT_WEBHOOK_SECRET, alias="WEBHOOK_SIGNING_SECRET"
     )
+    webhook_max_retries: int = Field(default=2, alias="WEBHOOK_MAX_RETRIES", ge=0, le=6)
+    webhook_retry_backoff_seconds: float = Field(
+        default=0.5, alias="WEBHOOK_RETRY_BACKOFF_SECONDS", ge=0.0
+    )
+    jira_project_key: str = Field(default="ITSD", alias="JIRA_PROJECT_KEY")
+    # Full `Authorization` header values (e.g. "Basic <b64>" or "Bearer <token>"); never logged.
+    jira_authorization: str = Field(default="", alias="JIRA_AUTHORIZATION")
+    servicenow_authorization: str = Field(default="", alias="SERVICENOW_AUTHORIZATION")
 
     # CORS & Logging
     backend_cors_origins: str = Field(
@@ -84,6 +94,15 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 750
     rag_chunk_overlap: int = 120
     rag_min_confidence: float = 0.18
+
+    def insecure_default_secrets(self) -> List[str]:
+        """Names of secrets still set to the shipped placeholder values."""
+        problems: List[str] = []
+        if self.jwt_secret == DEFAULT_JWT_SECRET:
+            problems.append("JWT_SECRET")
+        if self.webhook_signing_secret == DEFAULT_WEBHOOK_SECRET:
+            problems.append("WEBHOOK_SIGNING_SECRET")
+        return problems
 
     @property
     def has_openai_key(self) -> bool:

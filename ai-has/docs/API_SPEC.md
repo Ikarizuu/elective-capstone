@@ -4,6 +4,8 @@
 
 ## Authentication & RBAC Headers
 All protected endpoints support:
+> `ALLOW_HEADER_ROLE_AUTH` is **demo-only** and defaults to `false`; with it off, header auth returns `401` and `POST /api/auth/token` returns `404`.
+
 1. **JWT Bearer Token:** `Authorization: Bearer <token>` (minted via `POST /api/auth/token`)
 2. **Enterprise Dev Headers** (when `ALLOW_HEADER_ROLE_AUTH=true`):
    - `X-User-Role`: `employee` | `support_agent` | `admin`
@@ -144,3 +146,5 @@ Runs Hybrid Vector + BM25 RRF search directly and returns scored citations.
 
 ### `POST /api/webhooks/sandbox-receiver`
 Built-in local webhook receiver endpoint for end-to-end integration testing without external credentials.
+- **Headers:** `X-AIHAS-Signature: sha256=<HMAC-SHA256 of raw body>` (required) and `X-AIHAS-Event`.
+- **Responses:** `200 {"accepted": true, "external_ref": "EXT-...", "received_event": "...", "signature_verified": true}`; `401` on a missing or invalid signature; `400` on non-JSON bodies.

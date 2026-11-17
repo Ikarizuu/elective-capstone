@@ -24,12 +24,15 @@ Key environment variables:
 | `DATABASE_URL` | `sqlite:///./data/ai_has.db` | SQLite local DB or `postgresql+psycopg://...` |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | Local persistent ChromaDB vector directory |
 | `KNOWLEDGE_BASE_DIR` | `../knowledge_base` | Directory seeded with IT SOP `.md`/`.txt`/`.pdf` files |
-| `JWT_SECRET` | dev secret | Signing key for HS256 JWT tokens |
-| `ALLOW_HEADER_ROLE_AUTH` | `true` | Enables `X-User-Role` / `X-User-Email` UI role switcher |
+| `JWT_SECRET` | dev secret | Signing key for HS256 JWT tokens. **Backend refuses to start with the shipped default unless demo mode is on.** |
+| `ALLOW_HEADER_ROLE_AUTH` | `false` in code; `true` in `.env.example` / `docker-compose.yml` | **DEMO ONLY.** Trusts `X-User-Role` / `X-User-Email` headers (UI role switcher) and exposes `POST /api/auth/token`. Set `false` for anything beyond a local demo. |
 | `JIRA_WEBHOOK_URL` | *(blank)* | Outbound Jira webhook endpoint (uses sandbox sink if blank) |
 | `SERVICENOW_WEBHOOK_URL` | *(blank)* | Outbound ServiceNow webhook endpoint |
 | `N8N_WEBHOOK_URL` | *(blank)* | Outbound n8n/Make/SCIM automation webhook URL |
 | `WEBHOOK_SIGNING_SECRET` | dev secret | HMAC-SHA256 signing key (`X-AIHAS-Signature`) |
+| `JIRA_PROJECT_KEY` / `JIRA_AUTHORIZATION` | `ITSD` / blank | Jira project key; full `Authorization` header value (e.g. `Basic <b64>`) |
+| `SERVICENOW_AUTHORIZATION` | blank | Full `Authorization` header value for ServiceNow |
+| `WEBHOOK_MAX_RETRIES` / `WEBHOOK_RETRY_BACKOFF_SECONDS` | `2` / `0.5` | Retries on timeouts, network errors and 5xx (exponential backoff); 4xx is never retried |
 
 ---
 
@@ -74,6 +77,13 @@ docker compose up --build
 All outbound workflow events (`iam.password_reset.requested`, `software.access.provisioned`, `software.approval.requested`, `ticket.created`, `ticket.updated`, `session.escalated_to_human`, `session.agent_takeover`) include:
 - Header `X-AIHAS-Signature: sha256=<hex_hmac>` computed over the sorted JSON body with `WEBHOOK_SIGNING_SECRET`.
 - Header `X-AIHAS-Event: <event_name>`.
+
+Each target receives its **native body** (signature is computed over the exact bytes sent):
+- **Jira** (`JIRA_WEBHOOK_URL=https://<site>/rest/api/2/issue`): `{"fields": {"project", "summary", "description", "issuetype", "priority", "labels"}}`; the created issue `key` is stored as the external reference.
+- **ServiceNow** (`SERVICENOW_WEBHOOK_URL=https://<instance>/api/now/table/incident`): Table API incident (`short_description`, `description`, `caller_id`, `category`, `urgency`, `impact`, `correlation_id`); `result.number` is stored as the external reference.
+- **n8n / Make / SCIM**: the full event envelope `{event_id, event_name, target_system, source, payload}`.
+
+Receivers should verify `X-AIHAS-Signature` (`sha256=` + HMAC-SHA256 of the raw body). The built-in receiver does this and returns `401` on a bad or missing signature.
 
 When external URLs are left blank, AI-HAS routes deliveries to its built-in sandbox receiver and logs full envelopes in the **Admin -> Webhook Integration Ledger** tab. You can also test external HTTP delivery locally by setting `N8N_WEBHOOK_URL=http://localhost:8000/api/webhooks/sandbox-receiver`.
 

@@ -14,6 +14,8 @@ Enterprise IT service desks handle high volumes of repetitive Tier-1 tickets (VP
 4. **Enterprise Security Guardrails:** Enforces Role-Based Access Control (`employee`, `support_agent`, `admin`), pre-LLM/pre-DB **PII & credential scrubbing** (SSNs, phone numbers, IPv4s, emails, API keys, passwords), and **prompt-injection / jailbreak blocking**.
 5. **Operational KPI Observability:** Tracks Ticket Deflection Rate, Mean Time to Resolution (MTTR), P50/P95 Response Latency, RAG Faithfulness & Relevance, and security audit logs.
 
+**Demo mode & security:** `.env.example` and `docker-compose.yml` enable `ALLOW_HEADER_ROLE_AUTH=true` so the Role Switcher works. This is **demo-only**; in code it defaults to `false`, and the backend refuses to start with the shipped default secrets unless demo mode is on. CI (`.github/workflows/ci.yml`) runs tests, the evaluation gates, the frontend build and a Docker smoke test.
+
 > **Zero-Key Evaluation Mode:** If `OPENAI_API_KEY` is omitted or left blank in `.env`, AI-HAS automatically switches to its built-in deterministic local embedding + SOP/tool orchestrator and sandbox webhook simulator so you can run, test, and demo every UI flow and API endpoint out of the box.
 
 ---

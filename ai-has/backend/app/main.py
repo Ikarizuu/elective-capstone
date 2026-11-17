@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -25,9 +26,26 @@ from app.auth.rbac import (
 )
 from app.config import get_settings
 from app.database import SessionLocal, get_db, init_db
+from app.integrations.webhooks import verify_signature
 from app.rag.ingest import get_kb_manager
 
 settings = get_settings()
+
+
+def enforce_security_config() -> None:
+    """Fail fast on insecure defaults; warn loudly when demo header auth is on."""
+    cfg = get_settings()
+    insecure = cfg.insecure_default_secrets()
+    if cfg.allow_header_role_auth:
+        logging.getLogger("ai_has.main").warning(
+            "DEMO MODE: ALLOW_HEADER_ROLE_AUTH=true trusts X-User-Role headers and exposes "
+            "/api/auth/token. Never enable this in production."
+        )
+    elif insecure:
+        raise RuntimeError(
+            f"Refusing to start: {', '.join(insecure)} still use the shipped default value. "
+            "Set strong secrets in the environment (or set ALLOW_HEADER_ROLE_AUTH=true for a local demo)."
+        )
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -38,6 +56,7 @@ logger = logging.getLogger("ai_has.main")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Initialize SQLite/PostgreSQL schema, seed default personas, and index SOP KB."""
+    enforce_security_config()
     init_db()
     db = SessionLocal()
     try:
@@ -153,7 +172,9 @@ def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
 @app.post("/api/auth/token")
 def issue_demo_token(req: TokenRequest) -> Dict[str, Any]:
-    """Issue a signed HS256 JWT token for local API testing or role-switched sessions."""
+    """Issue a signed HS256 JWT for demo personas. DEMO ONLY: disabled unless ALLOW_HEADER_ROLE_AUTH=true."""
+    if not get_settings().allow_header_role_auth:
+        raise HTTPException(status_code=404, detail="Not found.")
     role = req.role.lower().strip()
     if role not in VALID_ROLES:
         role = "employee"
@@ -183,12 +204,24 @@ def get_me(user: AuthenticatedUser = Depends(get_current_user)) -> Authenticated
 
 @app.post("/api/webhooks/sandbox-receiver")
 async def sandbox_webhook_receiver(request: Request) -> Dict[str, Any]:
-    """Built-in webhook receiver endpoint simulating n8n / Jira / ServiceNow ingestion."""
-    body = await request.json()
+    """Built-in webhook receiver simulating n8n / Jira / ServiceNow ingestion.
+
+    Verifies the HMAC-SHA256 `X-AIHAS-Signature` over the raw body and rejects bad signatures.
+    """
+    raw = await request.body()
+    signature = request.headers.get("X-AIHAS-Signature", "")
+    if not verify_signature(settings.webhook_signing_secret, raw, signature):
+        raise HTTPException(status_code=401, detail="Invalid or missing webhook signature.")
+    try:
+        body = json.loads(raw or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Webhook body is not valid JSON.") from exc
+    if not isinstance(body, dict):
+        body = {}
     return {
         "accepted": True,
         "mode": "http_sandbox_receiver",
         "external_ref": f"EXT-{uuid.uuid4().hex[:6].upper()}",
-        "received_event": body.get("event_name", "unknown"),
-        "signature_header": request.headers.get("X-AIHAS-Signature", ""),
+        "received_event": body.get("event_name") or request.headers.get("X-AIHAS-Event", "unknown"),
+        "signature_verified": True,
     }
