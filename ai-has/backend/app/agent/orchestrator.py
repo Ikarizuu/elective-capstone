@@ -553,9 +553,11 @@ async def stream_chat_turn(
                 metric_type="chat_turn",
                 intent="security_blocked",
                 latency_ms=latency_ms,
-                faithfulness_score=1.0,
-                relevance_score=1.0,
-                deflected=True,
+                # A blocked attack is neither a resolved request nor a graded answer;
+                # keep it out of the deflection rate and the RAG quality averages.
+                faithfulness_score=None,
+                relevance_score=None,
+                deflected=False,
                 escalated=False,
             )
         )
@@ -569,9 +571,9 @@ async def stream_chat_turn(
                 "session_status": session.status,
                 "intent": "security_blocked",
                 "latency_ms": latency_ms,
-                "faithfulness_score": 1.0,
-                "relevance_score": 1.0,
-                "deflected": True,
+                "faithfulness_score": None,
+                "relevance_score": None,
+                "deflected": False,
                 "citations": [],
                 "tool_calls": [],
                 "llm_mode": "guardrail",

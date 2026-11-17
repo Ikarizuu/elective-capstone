@@ -47,6 +47,7 @@ export function KpiCharts({ data }: { data: AnalyticsSummary }) {
                 stroke="#2563eb"
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
+                connectNulls
               />
               <Line
                 type="monotone"
@@ -55,6 +56,7 @@ export function KpiCharts({ data }: { data: AnalyticsSummary }) {
                 stroke="#10b981"
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
+                connectNulls
               />
             </LineChart>
           </ResponsiveContainer>

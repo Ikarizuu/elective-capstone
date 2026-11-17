@@ -160,8 +160,8 @@ export interface AnalyticsSummary {
     label: string;
     timestamp: string;
     latency_ms: number;
-    faithfulness: number;
-    relevance: number;
+    faithfulness: number | null;
+    relevance: number | null;
   }>;
 }
 
@@ -478,8 +478,8 @@ export interface StreamCallbacks {
     session_status: string;
     intent: string;
     latency_ms: number;
-    faithfulness_score?: number;
-    relevance_score?: number;
+    faithfulness_score?: number | null;
+    relevance_score?: number | null;
     deflected: boolean;
     citations: Citation[];
     tool_calls: ToolCallEvent[];

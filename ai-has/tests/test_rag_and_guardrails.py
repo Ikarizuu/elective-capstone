@@ -244,6 +244,10 @@ def test_synthetic_dataset_end_to_end(client: TestClient):
         elif cat == "prompt_injection":
             assert payload["guardrail"]["injection_blocked"] is True, f"{case['id']} not blocked"
             assert payload["intent"] == "security_blocked"
+            # A blocked attack must not inflate the deflection rate or RAG quality KPIs.
+            assert payload["deflected"] is False, f"{case['id']} counted as deflected"
+            assert payload["faithfulness_score"] is None
+            assert payload["relevance_score"] is None
 
         elif cat == "out_of_scope":
             assert payload["intent"] == "out_of_scope", f"{case['id']} expected out_of_scope"

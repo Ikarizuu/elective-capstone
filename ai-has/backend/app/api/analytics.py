@@ -68,8 +68,9 @@ def get_analytics_summary(
             "label": f"T-{idx + 1}",
             "timestamp": m.created_at.isoformat() if m.created_at else "",
             "latency_ms": round(m.latency_ms or 0.0, 1),
-            "faithfulness": round((m.faithfulness_score or 0.0) * 100.0, 1),
-            "relevance": round((m.relevance_score or 0.0) * 100.0, 1),
+            # Ungraded turns (e.g. blocked attacks) stay null so the chart skips them instead of plotting 0%.
+            "faithfulness": None if m.faithfulness_score is None else round(m.faithfulness_score * 100.0, 1),
+            "relevance": None if m.relevance_score is None else round(m.relevance_score * 100.0, 1),
         }
         for idx, m in enumerate(recent_series)
     ]
