@@ -30,3 +30,6 @@ Thumbs.db
 
 # Generated evaluation output (the markdown report in docs/ is committed)
 ai-has/tests/eval_results.json
+
+# Local-only Claude Code skills (not shared yet)
+.claude/skills/
