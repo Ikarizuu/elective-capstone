@@ -19,8 +19,7 @@ import {
   getSession,
   GuardrailEvent,
   streamChat,
-  ToolCallEvent,
-} from "@/lib/api";
+  ToolCallEvent, describeError } from "@/lib/api";
 import { useRole } from "@/components/RoleSwitcher";
 import { CitationBadgeList } from "@/components/CitationBadge";
 import { ActionStatusCardList } from "@/components/ActionStatusCard";
@@ -225,7 +224,7 @@ export function ChatWidget({
         },
       });
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to reach AI-HAS backend");
+      setErrorMsg(describeError(err, "Failed to reach AI-HAS backend"));
       setMessages((prev) => prev.filter((m) => m.id !== tempAssistantId));
     } finally {
       setStreaming(false);
@@ -245,7 +244,7 @@ export function ChatWidget({
       setSessionStatus(refreshed.status);
       onTurnCompleted();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Escalation failed");
+      setErrorMsg(describeError(err, "Escalation failed"));
     }
   };
 

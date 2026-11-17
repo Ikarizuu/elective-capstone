@@ -8,6 +8,9 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -69,6 +72,53 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Attach a request id to every response so client errors can be traced in logs."""
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+def _error_response(request: Request, status_code: int, detail: str, code: str, **extra: Any):
+    request_id = getattr(request.state, "request_id", None)
+    body: Dict[str, Any] = {"detail": detail, "code": code, "request_id": request_id, **extra}
+    headers = {"X-Request-ID": request_id} if request_id else None
+    return JSONResponse(status_code=status_code, content=body, headers=headers)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else "Request failed."
+    return _error_response(request, exc.status_code, detail, f"http_{exc.status_code}")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = [
+        {
+            "field": ".".join(str(p) for p in err.get("loc", ()) if p not in ("body", "query", "path")),
+            "message": err.get("msg", "Invalid value"),
+        }
+        for err in exc.errors()
+    ]
+    summary = "; ".join(f"{e['field']}: {e['message']}" if e["field"] else e["message"] for e in errors)
+    return _error_response(
+        request, 422, f"Invalid request: {summary}", "validation_error", errors=errors
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception("Unhandled error on %s %s [request_id=%s]", request.method, request.url.path, request_id)
+    return _error_response(
+        request, 500, "Internal server error. Please retry or contact IT with the request id.", "internal_error"
+    )
+
 
 app.include_router(chat.router)
 app.include_router(tickets.router)

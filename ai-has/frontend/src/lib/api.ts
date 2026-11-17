@@ -203,10 +203,78 @@ function authHeaders(persona: Persona): Record<string, string> {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  requestId?: string;
+  constructor(status: number, message: string, code?: string, requestId?: string) {
     super(message);
+    this.name = "ApiError";
     this.status = status;
+    this.code = code;
+    this.requestId = requestId;
   }
+}
+
+const REQUEST_TIMEOUT_MS = 30000;
+
+const STATUS_MESSAGES: Record<number, string> = {
+  401: "Your session is not authenticated. Please switch role or reload.",
+  403: "You do not have permission to perform this action.",
+  404: "The requested item was not found.",
+  429: "Too many requests. Please wait a moment and retry.",
+  500: "The server hit an unexpected error. Please try again.",
+  502: "The backend is unreachable. Please try again shortly.",
+  503: "The backend is temporarily unavailable. Please try again shortly.",
+};
+
+/** Turn any failed Response into an ApiError with a human-readable message. */
+async function toApiError(resp: Response): Promise<ApiError> {
+  let detail = STATUS_MESSAGES[resp.status] || `Request failed (HTTP ${resp.status})`;
+  let code: string | undefined;
+  let requestId: string | undefined = resp.headers.get("X-Request-ID") || undefined;
+  try {
+    const body = await resp.json();
+    if (typeof body?.detail === "string") {
+      detail = body.detail;
+    } else if (Array.isArray(body?.detail)) {
+      detail = body.detail
+        .map((d: { msg?: string }) => d?.msg)
+        .filter(Boolean)
+        .join("; ") || detail;
+    }
+    code = body?.code;
+    requestId = body?.request_id || requestId;
+  } catch {
+    // non-JSON body: keep the status-based message
+  }
+  return new ApiError(resp.status, detail, code, requestId);
+}
+
+/** fetch wrapper adding a timeout and mapping network failures to ApiError(0). */
+async function safeFetch(url: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: init.signal ?? controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "The request timed out. Please try again.", "timeout");
+    }
+    throw new ApiError(
+      0,
+      `Cannot reach the AI-HAS backend at ${API_BASE_URL}. Is it running?`,
+      "network_error"
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Format any thrown value for display, including the request id when known. */
+export function describeError(err: unknown, fallback = "Something went wrong"): string {
+  if (err instanceof ApiError) {
+    return err.requestId ? `${err.message} (ref: ${err.requestId})` : err.message;
+  }
+  return err instanceof Error ? err.message : fallback;
 }
 
 async function apiRequest<T>(
@@ -222,30 +290,23 @@ async function apiRequest<T>(
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  const resp = await fetch(`${API_BASE_URL}${path}`, {
+  const resp = await safeFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
     cache: "no-store",
   });
 
-  if (!resp.ok) {
-    let detail = `HTTP ${resp.status}`;
-    try {
-      const errBody = await resp.json();
-      detail = errBody.detail || detail;
-    } catch {
-      // ignore json parse failure
-    }
-    throw new ApiError(resp.status, detail);
+  if (!resp.ok) throw await toApiError(resp);
+  try {
+    return (await resp.json()) as T;
+  } catch {
+    throw new ApiError(resp.status, "The server returned an invalid response.", "bad_response");
   }
-  return resp.json() as Promise<T>;
 }
 
 export async function fetchHealth(): Promise<HealthStatus> {
-  const resp = await fetch(`${API_BASE_URL}/api/health`, { cache: "no-store" });
-  if (!resp.ok) {
-    throw new ApiError(resp.status, "Backend unavailable");
-  }
+  const resp = await safeFetch(`${API_BASE_URL}/api/health`, { cache: "no-store" }, 8000);
+  if (!resp.ok) throw await toApiError(resp);
   return resp.json() as Promise<HealthStatus>;
 }
 
@@ -432,29 +493,27 @@ export async function streamChat(
   sessionId: string | null,
   callbacks: StreamCallbacks
 ): Promise<void> {
-  const resp = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(persona),
-      "Content-Type": "application/json",
+  // Long timeout: only guards the initial connection/headers, not the open stream.
+  const resp = await safeFetch(
+    `${API_BASE_URL}/api/chat/stream`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(persona),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message, session_id: sessionId }),
     },
-    body: JSON.stringify({ message, session_id: sessionId }),
-  });
+    60000
+  );
 
-  if (!resp.ok || !resp.body) {
-    let detail = `HTTP ${resp.status}`;
-    try {
-      const errBody = await resp.json();
-      detail = errBody.detail || detail;
-    } catch {
-      // ignore
-    }
-    throw new ApiError(resp.status, detail);
-  }
+  if (!resp.ok) throw await toApiError(resp);
+  if (!resp.body) throw new ApiError(resp.status, "The server returned an empty stream.");
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let streamError: ApiError | null = null;
 
   const dispatchFrame = (frame: string) => {
     const lines = frame.split(/\r?\n/);
@@ -478,6 +537,14 @@ export async function streamChat(
       return;
     }
 
+    if (eventName === "error") {
+      streamError = new ApiError(
+        500,
+        typeof parsed.detail === "string" ? parsed.detail : "The assistant stream failed.",
+        "stream_error"
+      );
+      return;
+    }
     if (eventName === "session" && callbacks.onSession) {
       callbacks.onSession(parsed as { session_id: string; status: string; title: string });
     } else if (eventName === "guardrail" && callbacks.onGuardrail) {

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +16,8 @@ from app.auth.rbac import AuthenticatedUser, get_current_user, record_rbac_denia
 from app.database import AuditLog, ChatMessage, ChatSession, MetricRecord, Ticket, get_db, utcnow
 from app.guardrails.pii import scrub_pii
 from app.integrations.webhooks import dispatch_webhook
+
+logger = logging.getLogger("ai_has.chat")
 
 router = APIRouter(prefix="/api/chat", tags=["Chat & Human-in-the-Loop"])
 
@@ -71,6 +75,17 @@ def _serialize_session(session: ChatSession, include_messages: bool = False) -> 
     return payload
 
 
+async def _safe_stream(**kwargs):
+    """Yield SSE frames, converting mid-stream failures into a terminal `error` event."""
+    try:
+        async for frame in stream_chat_turn(**kwargs):
+            yield frame
+    except Exception:  # noqa: BLE001
+        logger.exception("Chat stream failed")
+        payload = json.dumps({"detail": "The assistant hit an unexpected error. Please try again."})
+        yield f"event: error\ndata: {payload}\n\n"
+
+
 @router.post("/stream")
 async def chat_stream(
     req: ChatRequest,
@@ -93,7 +108,7 @@ async def chat_stream(
             )
 
     return StreamingResponse(
-        stream_chat_turn(db=db, user=user, message=req.message, session_id=req.session_id),
+        _safe_stream(db=db, user=user, message=req.message, session_id=req.session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

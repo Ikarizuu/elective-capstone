@@ -22,8 +22,7 @@ import {
   sendAgentMessage,
   takeoverSession,
   Ticket,
-  updateTicket,
-} from "@/lib/api";
+  updateTicket, describeError } from "@/lib/api";
 import { useRole } from "@/components/RoleSwitcher";
 import MarkdownText from "@/components/MarkdownText";
 
@@ -75,7 +74,7 @@ export default function AgentConsolePage() {
       setActionMsg("Took over live conversation from AI.");
       await loadConsole();
     } catch (err) {
-      setActionMsg(err instanceof Error ? err.message : "Takeover failed");
+      setActionMsg(describeError(err, "Takeover failed"));
     }
   };
 
@@ -87,7 +86,7 @@ export default function AgentConsolePage() {
       setReplyText("");
       await loadConsole();
     } catch (err) {
-      setActionMsg(err instanceof Error ? err.message : "Failed to send message");
+      setActionMsg(describeError(err, "Failed to send message"));
     }
   };
 
@@ -104,7 +103,7 @@ export default function AgentConsolePage() {
       );
       await loadConsole();
     } catch (err) {
-      setActionMsg(err instanceof Error ? err.message : "Resolution failed");
+      setActionMsg(describeError(err, "Resolution failed"));
     }
   };
 
@@ -116,7 +115,7 @@ export default function AgentConsolePage() {
       });
       await loadConsole();
     } catch (err) {
-      setActionMsg(err instanceof Error ? err.message : "Ticket update failed");
+      setActionMsg(describeError(err, "Ticket update failed"));
     }
   };
 

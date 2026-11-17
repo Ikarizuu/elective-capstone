@@ -30,8 +30,7 @@ import {
   reindexKB,
   searchKB,
   uploadKBDocument,
-  WebhookDelivery,
-} from "@/lib/api";
+  WebhookDelivery, describeError } from "@/lib/api";
 import { useRole } from "@/components/RoleSwitcher";
 import { KpiCharts } from "@/components/KpiCharts";
 
@@ -86,7 +85,7 @@ export default function AdminDashboardPage() {
       );
       await loadDashboard();
     } catch (err) {
-      setStatusBanner(err instanceof Error ? err.message : "Upload failed");
+      setStatusBanner(describeError(err, "Upload failed"));
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -102,7 +101,7 @@ export default function AdminDashboardPage() {
       );
       await loadDashboard();
     } catch (err) {
-      setStatusBanner(err instanceof Error ? err.message : "Re-index failed");
+      setStatusBanner(describeError(err, "Re-index failed"));
     } finally {
       setReindexing(false);
     }
@@ -114,7 +113,7 @@ export default function AdminDashboardPage() {
       setStatusBanner(`Deleted '${filename}' from Knowledge Base.`);
       await loadDashboard();
     } catch (err) {
-      setStatusBanner(err instanceof Error ? err.message : "Delete failed");
+      setStatusBanner(describeError(err, "Delete failed"));
     }
   };
 
