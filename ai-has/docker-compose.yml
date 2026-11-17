@@ -7,12 +7,18 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false   # works out of the box; copy .env.example to .env to customise
     environment:
       - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/ai_has.db}
       - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR:-./data/chroma}
       - KNOWLEDGE_BASE_DIR=/app/knowledge_base
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # DEMO ONLY: lets the UI role switcher send X-User-Role headers. Set to false and provide
+      # strong JWT_SECRET / WEBHOOK_SIGNING_SECRET for anything beyond a local demo.
+      - ALLOW_HEADER_ROLE_AUTH=${ALLOW_HEADER_ROLE_AUTH:-true}
+      - JWT_SECRET=${JWT_SECRET:-ai-has-enterprise-dev-secret-change-in-production}
+      - WEBHOOK_SIGNING_SECRET=${WEBHOOK_SIGNING_SECRET:-ai-has-webhook-hmac-secret}
     volumes:
       - ai_has_data:/app/data
       - ./knowledge_base:/app/knowledge_base
@@ -21,7 +27,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     restart: unless-stopped
 
   frontend:

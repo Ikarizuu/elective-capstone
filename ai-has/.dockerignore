@@ -1,0 +1,16 @@
+# Keep the build context small and stop host artifacts leaking into images.
+**/.venv
+**/venv
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+backend/data
+tests
+docs
+.env
+.env.*
+!.env.example
+**/*.log
+.git
