@@ -74,10 +74,13 @@ class EmbeddingProvider:
 
     def __init__(self) -> None:
         self.settings = get_settings()
+        # Set when the configured provider can't embed (e.g. an outage at startup). Search
+        # then runs on local embeddings until restart; chat still uses the provider.
+        self.degraded_to_local = False
 
     @property
     def mode(self) -> str:
-        return self.settings.active_llm_provider
+        return "local" if self.degraded_to_local else self.settings.active_llm_provider
 
     @property
     def collection_name(self) -> str:

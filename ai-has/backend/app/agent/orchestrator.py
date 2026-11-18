@@ -297,13 +297,58 @@ async def _run_deterministic_fallback(
     return "rag_qa", "\n".join(lines), executed_tools
 
 
+_TOOL_INTENTS = (
+    ("escalate_to_human", "escalate"),
+    ("trigger_password_reset", "tool_password_reset"),
+    ("provision_software_access", "tool_software_access"),
+    ("create_it_ticket", "tool_create_ticket"),
+)
+
+_ACTION_LABELS = {
+    "trigger_password_reset": "Password reset",
+    "provision_software_access": "Software access request",
+    "create_it_ticket": "IT ticket",
+    "escalate_to_human": "Escalation to a human agent",
+}
+
+
+def _intent_from_tools(
+    executed_tools: List[Dict[str, Any]], citations: List[CitationResult], final_text: str
+) -> str:
+    """Classify an LLM turn by the workflow tools it actually executed."""
+    names = {t["tool_name"] for t in executed_tools}
+    for tool_name, intent in _TOOL_INTENTS:
+        if tool_name in names:
+            return intent
+    if not citations or (citations[0].score < 0.25 and "out of scope" in final_text.lower()):
+        return "out_of_scope"
+    return "rag_qa"
+
+
+def _summarize_interrupted_actions(actions: List[Dict[str, Any]]) -> str:
+    """Tell the user which real actions already ran before the LLM provider failed."""
+    lines = ["The AI assistant was interrupted, but these actions were already carried out for your request:\n"]
+    for t in actions:
+        lines.append(f"- **{_ACTION_LABELS.get(t['tool_name'], t['tool_name'])}**: {t.get('status') or 'unknown'}")
+    lines.append(
+        "\nSee the action details above. Please don't repeat the request; if anything looks wrong, "
+        "ask me to **escalate to a human agent**."
+    )
+    return "\n".join(lines)
+
+
 async def _run_openai_orchestration(
     redacted_query: str,
     citations: List[CitationResult],
     history: List[ChatMessage],
     ctx: ToolContext,
+    executed_tools: List[Dict[str, Any]],
 ) -> Tuple[str, str, List[Dict[str, Any]], int]:
-    """Execute full OpenAI gpt-4o-mini function-calling loop grounded in retrieved SOP chunks."""
+    """Execute full OpenAI gpt-4o-mini function-calling loop grounded in retrieved SOP chunks.
+
+    Executed tools are appended to the caller's `executed_tools` list as they run, so the
+    caller still knows about real side effects if a later provider call raises.
+    """
     settings = get_settings()
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     retriever = HybridRetriever()
@@ -320,7 +365,6 @@ async def _run_openai_orchestration(
         messages.append({"role": role, "content": msg.content})
     messages.append({"role": "user", "content": redacted_query})
 
-    executed_tools: List[Dict[str, Any]] = []
     total_tokens = 0
     final_text = ""
 
@@ -383,18 +427,7 @@ async def _run_openai_orchestration(
     if not final_text:
         final_text = "Your IT request has been processed. Please review the action details above."
 
-    intent = "rag_qa"
-    if any(t["tool_name"] == "escalate_to_human" for t in executed_tools):
-        intent = "escalate"
-    elif any(t["tool_name"] == "trigger_password_reset" for t in executed_tools):
-        intent = "tool_password_reset"
-    elif any(t["tool_name"] == "provision_software_access" for t in executed_tools):
-        intent = "tool_software_access"
-    elif any(t["tool_name"] == "create_it_ticket" for t in executed_tools):
-        intent = "tool_create_ticket"
-    elif not citations or (citations[0].score < 0.25 and "out of scope" in final_text.lower()):
-        intent = "out_of_scope"
-
+    intent = _intent_from_tools(executed_tools, citations, final_text)
     return intent, final_text, executed_tools, total_tokens
 
 
@@ -403,8 +436,12 @@ async def _run_gemini_orchestration(
     citations: List[CitationResult],
     history: List[ChatMessage],
     ctx: ToolContext,
+    executed_tools: List[Dict[str, Any]],
 ) -> Tuple[str, str, List[Dict[str, Any]], int]:
-    """Run Gemini function calling while reusing the guarded project tool handlers."""
+    """Run Gemini function calling while reusing the guarded project tool handlers.
+
+    Like the OpenAI runner, executed tools are appended to the caller's list as they run.
+    """
     from google import genai
     from google.genai import types
 
@@ -431,7 +468,6 @@ async def _run_gemini_orchestration(
         tools=tools,
         temperature=0.1,
     )
-    executed_tools: List[Dict[str, Any]] = []
     total_tokens = 0
     final_text = ""
 
@@ -461,12 +497,7 @@ async def _run_gemini_orchestration(
 
     if not final_text:
         final_text = "Your IT request has been processed. Please review the action details above."
-    intent = "rag_qa"
-    if any(t["tool_name"] == "escalate_to_human" for t in executed_tools): intent = "escalate"
-    elif any(t["tool_name"] == "trigger_password_reset" for t in executed_tools): intent = "tool_password_reset"
-    elif any(t["tool_name"] == "provision_software_access" for t in executed_tools): intent = "tool_software_access"
-    elif any(t["tool_name"] == "create_it_ticket" for t in executed_tools): intent = "tool_create_ticket"
-    elif not citations or (citations[0].score < 0.25 and "out of scope" in final_text.lower()): intent = "out_of_scope"
+    intent = _intent_from_tools(executed_tools, citations, final_text)
     return intent, final_text, executed_tools, total_tokens
 
 
@@ -679,6 +710,7 @@ async def stream_chat_turn(
     tokens_used = 0
     llm_mode = "deterministic"
     if settings.active_llm_provider in {"openai", "gemini"}:
+        executed: List[Dict[str, Any]] = []
         try:
             runner = _run_gemini_orchestration if settings.active_llm_provider == "gemini" else _run_openai_orchestration
             intent, response_text, tool_calls, tokens_used = await runner(
@@ -686,6 +718,7 @@ async def stream_chat_turn(
                 citations=citations,
                 history=history,
                 ctx=ctx,
+                executed_tools=executed,
             )
             llm_mode = settings.active_llm_provider
         except Exception:
@@ -694,12 +727,20 @@ async def stream_chat_turn(
                 settings.active_llm_provider,
                 session.id,
             )
-            intent, response_text, tool_calls = await _run_deterministic_fallback(
-                redacted_query=safe_user_content,
-                citations=citations,
-                history=history,
-                ctx=ctx,
-            )
+            # Workflow tools may already have run (a real reset, ticket or escalation).
+            # Report them instead of hiding them, and don't re-run them via the fallback.
+            actions = [t for t in executed if t["tool_name"] != "search_it_knowledge_base"]
+            if actions:
+                tool_calls = executed
+                intent = _intent_from_tools(executed, citations, "")
+                response_text = _summarize_interrupted_actions(actions)
+            else:
+                intent, response_text, tool_calls = await _run_deterministic_fallback(
+                    redacted_query=safe_user_content,
+                    citations=citations,
+                    history=history,
+                    ctx=ctx,
+                )
             llm_mode = "deterministic_fallback"
     else:
         intent, response_text, tool_calls = await _run_deterministic_fallback(

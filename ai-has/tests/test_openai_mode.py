@@ -169,6 +169,32 @@ def test_blocked_injection_never_reaches_the_model(openai_mode):
     assert fake.requests == []
 
 
+def test_actions_already_taken_are_reported_not_hidden_or_repeated(openai_mode):
+    from app.database import SessionLocal, WebhookDelivery
+
+    def webhooks() -> int:
+        db = SessionLocal()
+        try:
+            return db.query(WebhookDelivery).count()
+        finally:
+            db.close()
+
+    openai_mode(
+        tool_call("trigger_password_reset", {"employee_email": "self", "system": "okta", "reason": "Forgot"}),
+        RuntimeError("outage on round 2"),
+    )
+    with TestClient(app) as c:
+        before = webhooks()
+        data = _chat(c, "I forgot my Okta password, please reset it.")
+        sent = webhooks() - before
+
+    assert data["llm_mode"] == "deterministic_fallback"
+    assert data["intent"] == "tool_password_reset"
+    assert [t["tool_name"] for t in data["tool_calls"]] == ["trigger_password_reset"]
+    assert "Password reset" in data["reply"]
+    assert sent == 1, "the reset must run exactly once, not again via the fallback"
+
+
 def test_openai_failure_falls_back_visibly_and_is_logged(openai_mode, caplog):
     openai_mode(RuntimeError("simulated OpenAI outage"))
     with caplog.at_level(logging.ERROR, logger="ai_has.orchestrator"), TestClient(app) as c:

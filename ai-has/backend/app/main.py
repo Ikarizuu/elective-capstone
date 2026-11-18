@@ -61,7 +61,19 @@ async def lifespan(_app: FastAPI):
     db = SessionLocal()
     try:
         kb_manager = get_kb_manager()
-        stats = kb_manager.sync_knowledge_base(db, force=False)
+        try:
+            stats = kb_manager.sync_knowledge_base(db, force=False)
+        except Exception:
+            if kb_manager.embedder.mode == "local":
+                raise
+            # A provider outage or bad key must not stop the helpdesk from starting.
+            logger.exception(
+                "%s embeddings failed during KB sync; falling back to local embeddings until restart",
+                kb_manager.embedder.mode,
+            )
+            db.rollback()
+            kb_manager.embedder.degraded_to_local = True
+            stats = kb_manager.sync_knowledge_base(db, force=False)
         logger.info(
             "AI-HAS startup ready: llm_provider=%s embed_mode=%s kb=%s",
             settings.active_llm_provider,

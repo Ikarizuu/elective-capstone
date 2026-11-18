@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
 from app.rag.ingest import KnowledgeBaseManager, get_kb_manager, tokenize_for_bm25
+
+logger = logging.getLogger(__name__)
 
 _CODE_PATTERN = re.compile(r"\b(?:vpn-\d+|sso-\d+|sec-lock|sop-it-\d+|mfa-err-[a-z]+|550\s*5\.7\.1)\b", re.IGNORECASE)
 
@@ -49,16 +52,20 @@ class HybridRetriever:
 
         n_candidates = min(len(chunks), max(top_k * 3, 12))
 
-        # 1. Dense Vector Search via ChromaDB
-        collection = self.kb_manager._get_collection()
-        query_embedding = self.kb_manager.embedder.embed_query(query)
-        vec_res = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_candidates,
-            include=["distances"],
-        )
-        vec_ids = (vec_res.get("ids") or [[]])[0]
-        vec_dists = (vec_res.get("distances") or [[]])[0]
+        # 1. Dense Vector Search via ChromaDB (BM25-only if the embedding provider is down)
+        try:
+            collection = self.kb_manager._get_collection()
+            query_embedding = self.kb_manager.embedder.embed_query(query)
+            vec_res = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_candidates,
+                include=["distances"],
+            )
+            vec_ids = (vec_res.get("ids") or [[]])[0]
+            vec_dists = (vec_res.get("distances") or [[]])[0]
+        except Exception:
+            logger.exception("Vector search failed; using BM25 lexical results only")
+            vec_ids, vec_dists = [], []
 
         vec_ranks: Dict[str, int] = {}
         vec_scores: Dict[str, float] = {}
