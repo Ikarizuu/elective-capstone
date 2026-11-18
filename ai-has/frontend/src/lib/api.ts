@@ -130,7 +130,9 @@ export interface HealthStatus {
   status: string;
   service: string;
   version: string;
+  llm_provider?: string;
   openai_configured: boolean;
+  gemini_configured?: boolean;
   chat_model: string;
   embedding_mode: string;
   kb_documents: number;

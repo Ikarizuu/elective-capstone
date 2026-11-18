@@ -68,7 +68,7 @@ class IndexedChunk:
 
 
 class EmbeddingProvider:
-    """Provides OpenAI text-embedding-3-small vectors or deterministic local embeddings."""
+    """Provides provider-specific vectors or deterministic local embeddings."""
 
     DIM = 1536
 
@@ -77,11 +77,11 @@ class EmbeddingProvider:
 
     @property
     def mode(self) -> str:
-        return "openai" if self.settings.has_openai_key else "local"
+        return self.settings.active_llm_provider
 
     @property
     def collection_name(self) -> str:
-        return "ai_has_sop_openai" if self.mode == "openai" else "ai_has_sop_local"
+        return f"ai_has_sop_{self.mode}"
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         if not texts:
@@ -93,6 +93,19 @@ class EmbeddingProvider:
                 input=texts,
             )
             return [item.embedding for item in response.data]
+        if self.mode == "gemini":
+            from google import genai
+
+            client = genai.Client(api_key=self.settings.gemini_api_key)
+            vectors: List[List[float]] = []
+            for text in texts:
+                response = client.models.embed_content(
+                    model="gemini-embedding-001",
+                    contents=text,
+                    config={"output_dimensionality": self.DIM},
+                )
+                vectors.append(list(response.embeddings[0].values))
+            return vectors
         return [self._local_hash_embedding(t) for t in texts]
 
     def embed_query(self, query: str) -> List[float]:

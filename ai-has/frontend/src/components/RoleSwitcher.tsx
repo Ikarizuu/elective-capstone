@@ -106,9 +106,11 @@ function StatusIndicator({ health }: { health: HealthStatus | null }) {
   const online = health !== null;
   const label = !online
     ? "API offline"
-    : health.openai_configured
-      ? health.chat_model
-      : "Local engine";
+    : health.llm_provider === "gemini"
+      ? `Gemini · ${health.chat_model}`
+      : health.llm_provider === "openai" || health.openai_configured
+        ? health.chat_model
+        : "Local engine";
   const detail = online
     ? `Backend online · ${health.kb_documents} SOPs, ${health.kb_chunks} chunks indexed`
     : "Backend unreachable. Start the API on port 8000.";

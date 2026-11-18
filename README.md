@@ -1,6 +1,6 @@
 # AI-HAS — AI-Powered Enterprise Helpdesk & Workflow Automation System
 
-An end-to-end **Enterprise Level-1 IT Support Automation Platform** built with **FastAPI**, **OpenAI (`gpt-4o-mini` + `text-embedding-3-small`)**, **LangChain**, **ChromaDB + BM25 Hybrid RAG**, **SQLAlchemy**, and **Next.js 14+ (TypeScript + Tailwind + Recharts)**.
+An end-to-end **Enterprise Level-1 IT Support Automation Platform** built with **FastAPI**, selectable **Google Gemini** or **OpenAI** chat and embeddings, **LangChain**, **ChromaDB + BM25 Hybrid RAG**, **SQLAlchemy**, and **Next.js 14+ (TypeScript + Tailwind + Recharts)**.
 
 ---
 
@@ -9,14 +9,14 @@ An end-to-end **Enterprise Level-1 IT Support Automation Platform** built with *
 Enterprise IT service desks handle high volumes of repetitive Tier-1 tickets (VPN errors, password resets, MFA lockouts, software license approvals) alongside high-risk security incidents. **AI-HAS** automates routine resolution and workflow execution while maintaining strict enterprise governance:
 
 1. **Zero-Hallucination Hybrid RAG:** Combines dense vector search (**ChromaDB**) and sparse lexical search (**BM25Okapi**) via Reciprocal Rank Fusion (RRF) over corporate IT Standard Operating Procedures (SOPs), returning verifiable inline citations (`[SOP-IT-001]`, etc.).
-2. **Automated IT Workflow Execution:** Uses OpenAI Function Calling to execute password resets, Tier-A/Tier-B/Tier-C software access provisioning, ITSM ticket creation, and signed HMAC-SHA256 webhook dispatches (Jira / ServiceNow / n8n / SCIM, plus a built-in local sandbox receiver).
+2. **Automated IT Workflow Execution:** Uses the selected model provider's function calling (Gemini or OpenAI) to execute password resets, Tier-A/Tier-B/Tier-C software access provisioning, ITSM ticket creation, and signed HMAC-SHA256 webhook dispatches (Jira / ServiceNow / n8n / SCIM, plus a built-in local sandbox receiver).
 3. **Human-in-the-Loop Escalation:** Escalates complex or sensitive incidents (e.g., lost/stolen devices, `SEC-LOCK`, missing backup MFA) to a live Support Agent queue with an AI-generated handoff summary and live chat takeover.
 4. **Enterprise Security Guardrails:** Enforces Role-Based Access Control (`employee`, `support_agent`, `admin`), pre-LLM/pre-DB **PII & credential scrubbing** (SSNs, phone numbers, IPv4s, emails, API keys, passwords), and **prompt-injection / jailbreak blocking**.
 5. **Operational KPI Observability:** Tracks Ticket Deflection Rate, Mean Time to Resolution (MTTR), P50/P95 Response Latency, RAG Faithfulness & Relevance, and security audit logs.
 
 **Demo mode & security:** `.env.example` and `docker-compose.yml` enable `ALLOW_HEADER_ROLE_AUTH=true` so the Role Switcher works. This is **demo-only**; in code it defaults to `false`, and the backend refuses to start with the shipped default secrets unless demo mode is on. CI (`.github/workflows/ci.yml`) runs tests, the evaluation gates, the frontend build and a Docker smoke test.
 
-> **Zero-Key Evaluation Mode:** If `OPENAI_API_KEY` is omitted or left blank in `.env`, AI-HAS automatically switches to its built-in deterministic local embedding + SOP/tool orchestrator and sandbox webhook simulator so you can run, test, and demo every UI flow and API endpoint out of the box.
+> **Zero-Key Evaluation Mode:** If the selected provider has no valid key (`GEMINI_API_KEY` for Gemini or `OPENAI_API_KEY` for OpenAI), AI-HAS uses its deterministic local embedding + SOP/tool orchestrator and sandbox webhook simulator. This mode lets you run, test, and demo every UI flow and API endpoint without external AI API calls.
 
 ---
 
@@ -46,7 +46,7 @@ Choose either **Docker** (recommended for quick handoff/evaluation) or **Local D
 - **Option B (Local):**
   - **Python 3.11+** (tested on Python 3.11–3.13)
   - **Node.js 20+** and **npm**
-- **Optional:** An `OPENAI_API_KEY` from OpenAI (`gpt-4o-mini` & `text-embedding-3-small`). Not required to run the demo or test suite.
+- **Optional:** A Google AI Studio `GEMINI_API_KEY` (Gemini mode) or an `OPENAI_API_KEY` (OpenAI mode). Neither is required for the local deterministic demo or test suite.
 
 ---
 
@@ -62,9 +62,19 @@ cp .env.example .env
 
 *(Windows PowerShell: `Copy-Item .env.example .env`)*
 
-Open `.env` if you want to plug in your OpenAI key:
-- **Full OpenAI LLM Mode:** Set `OPENAI_API_KEY=sk-...`
-- **Offline / No-Key Demo Mode:** Leave `OPENAI_API_KEY=` blank (or keep the placeholder) — the local SOP/workflow engine and sandbox webhook simulator will run automatically.
+Open `.env` and choose a provider. Gemini is the recommended configuration in the included `.env.example`:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-google-ai-studio-api-key
+GEMINI_CHAT_MODEL=gemini-3.8-flash
+```
+
+AI-HAS uses Gemini for both chat/tool calling and RAG embeddings in this mode. The health endpoint at `http://localhost:8000/api/health` reports the active `llm_provider`, `chat_model`, and `embedding_mode`; the frontend status badge should show the active Gemini model. A successful health check confirms configuration, while a chat response with `llm_mode: "gemini"` confirms that turn used Gemini. If a provider request fails, the backend logs the failure and returns a deterministic fallback response (`llm_mode: "deterministic_fallback"`).
+
+To use OpenAI instead, set `LLM_PROVIDER=openai` and provide `OPENAI_API_KEY`. To use the no-key local demo, leave the selected provider's key blank; the local SOP/workflow engine and sandbox webhook simulator will run instead.
+
+After changing the provider or model, restart the backend. Gemini, OpenAI, and local embeddings are stored in separate ChromaDB collections; changing providers does not combine or migrate their indexes. Gemini's model availability, quota, and pricing depend on your Google AI Studio project.
 
 ---
 

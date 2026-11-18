@@ -398,6 +398,78 @@ async def _run_openai_orchestration(
     return intent, final_text, executed_tools, total_tokens
 
 
+async def _run_gemini_orchestration(
+    redacted_query: str,
+    citations: List[CitationResult],
+    history: List[ChatMessage],
+    ctx: ToolContext,
+) -> Tuple[str, str, List[Dict[str, Any]], int]:
+    """Run Gemini function calling while reusing the guarded project tool handlers."""
+    from google import genai
+    from google.genai import types
+
+    settings = get_settings()
+    client = genai.Client(api_key=settings.gemini_api_key)
+    retriever = HybridRetriever()
+    contents = []
+    for msg in history[-6:]:
+        contents.append(types.Content(
+            role="model" if msg.sender_role in {"assistant", "support_agent"} else "user",
+            parts=[types.Part(text=msg.content)],
+        ))
+    contents.append(types.Content(role="user", parts=[types.Part(text=redacted_query)]))
+    tools = [{
+        "function_declarations": [
+            {"name": item["function"]["name"],
+             "description": item["function"]["description"],
+             "parameters": item["function"]["parameters"]}
+            for item in OPENAI_TOOLS
+        ]
+    }]
+    config = types.GenerateContentConfig(
+        system_instruction=f"{SYSTEM_PROMPT}\n\n### RETRIEVED SOP CONTEXT ###\n{retriever.format_context(citations)}",
+        tools=tools,
+        temperature=0.1,
+    )
+    executed_tools: List[Dict[str, Any]] = []
+    total_tokens = 0
+    final_text = ""
+
+    for _round in range(4):
+        response = await client.aio.models.generate_content(
+            model=settings.gemini_chat_model, contents=contents, config=config
+        )
+        usage = getattr(response, "usage_metadata", None)
+        if usage:
+            total_tokens += getattr(usage, "total_token_count", 0) or 0
+        calls = list(getattr(response, "function_calls", None) or [])
+        if not calls:
+            final_text = (getattr(response, "text", None) or "").strip()
+            break
+        candidate_content = response.candidates[0].content
+        contents.append(candidate_content)
+        results = []
+        for call in calls:
+            args = dict(call.args or {})
+            result = await execute_tool_call(call.name, args, ctx)
+            executed_tools.append({"tool_name": call.name, "arguments": args,
+                                  "result": result, "status": result.get("status")})
+            results.append(types.Part.from_function_response(
+                name=call.name, response={"result": result}
+            ))
+        contents.append(types.Content(role="user", parts=results))
+
+    if not final_text:
+        final_text = "Your IT request has been processed. Please review the action details above."
+    intent = "rag_qa"
+    if any(t["tool_name"] == "escalate_to_human" for t in executed_tools): intent = "escalate"
+    elif any(t["tool_name"] == "trigger_password_reset" for t in executed_tools): intent = "tool_password_reset"
+    elif any(t["tool_name"] == "provision_software_access" for t in executed_tools): intent = "tool_software_access"
+    elif any(t["tool_name"] == "create_it_ticket" for t in executed_tools): intent = "tool_create_ticket"
+    elif not citations or (citations[0].score < 0.25 and "out of scope" in final_text.lower()): intent = "out_of_scope"
+    return intent, final_text, executed_tools, total_tokens
+
+
 def _get_or_create_session(
     db: Session,
     user: AuthenticatedUser,
@@ -603,21 +675,23 @@ async def stream_chat_turn(
         extracted_emails=pii_res.extracted_emails,
     )
 
-    # 5. Orchestrate via OpenAI gpt-4o-mini or Deterministic Local Fallback
+    # 5. Orchestrate with selected provider or deterministic local fallback
     tokens_used = 0
     llm_mode = "deterministic"
-    if settings.has_openai_key:
+    if settings.active_llm_provider in {"openai", "gemini"}:
         try:
-            intent, response_text, tool_calls, tokens_used = await _run_openai_orchestration(
+            runner = _run_gemini_orchestration if settings.active_llm_provider == "gemini" else _run_openai_orchestration
+            intent, response_text, tool_calls, tokens_used = await runner(
                 redacted_query=safe_user_content,
                 citations=citations,
                 history=history,
                 ctx=ctx,
             )
-            llm_mode = "openai"
+            llm_mode = settings.active_llm_provider
         except Exception:
             logger.exception(
-                "OpenAI orchestration failed; serving deterministic fallback [session_id=%s]",
+                "%s orchestration failed; serving deterministic fallback [session_id=%s]",
+                settings.active_llm_provider,
                 session.id,
             )
             intent, response_text, tool_calls = await _run_deterministic_fallback(

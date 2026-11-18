@@ -47,6 +47,11 @@ class Settings(BaseSettings):
         default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL"
     )
 
+    # Provider selection: openai, gemini, or local deterministic mode.
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    gemini_chat_model: str = Field(default="gemini-3.8-flash", alias="GEMINI_CHAT_MODEL")
+
     # Database & Storage
     database_url: str = Field(
         default=f"sqlite:///{(BACKEND_DIR / 'data' / 'ai_has.db').as_posix()}",
@@ -117,6 +122,20 @@ class Settings(BaseSettings):
         }:
             return False
         return len(key) >= 12
+
+    @property
+    def has_gemini_key(self) -> bool:
+        key = (self.gemini_api_key or "").strip()
+        return len(key) >= 12 and key.lower() not in {"your-gemini-api-key", "changeme", "none"}
+
+    @property
+    def active_llm_provider(self) -> str:
+        provider = self.llm_provider.strip().lower()
+        if provider == "gemini" and self.has_gemini_key:
+            return "gemini"
+        if provider == "openai" and self.has_openai_key:
+            return "openai"
+        return "local"
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -63,14 +63,14 @@ async def lifespan(_app: FastAPI):
         kb_manager = get_kb_manager()
         stats = kb_manager.sync_knowledge_base(db, force=False)
         logger.info(
-            "AI-HAS startup ready: openai_configured=%s embed_mode=%s kb=%s",
-            settings.has_openai_key,
+            "AI-HAS startup ready: llm_provider=%s embed_mode=%s kb=%s",
+            settings.active_llm_provider,
             kb_manager.embedder.mode,
             stats,
         )
-        if not settings.has_openai_key:
+        if settings.active_llm_provider == "local":
             logger.warning(
-                "OPENAI_API_KEY is not configured; running local embedding + deterministic SOP/tool orchestrator."
+                "No configured LLM provider; running local embedding + deterministic SOP/tool orchestrator."
             )
     finally:
         db.close()
@@ -162,8 +162,10 @@ def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "status": "healthy",
         "service": settings.app_name,
         "version": settings.app_version,
+        "llm_provider": settings.active_llm_provider,
         "openai_configured": settings.has_openai_key,
-        "chat_model": settings.openai_chat_model,
+        "gemini_configured": settings.has_gemini_key,
+        "chat_model": settings.gemini_chat_model if settings.active_llm_provider == "gemini" else settings.openai_chat_model,
         "embedding_mode": kb_manager.embedder.mode,
         "kb_documents": doc_count,
         "kb_chunks": len(kb_manager.chunks),
