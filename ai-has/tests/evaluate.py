@@ -31,6 +31,9 @@ TMP_DIR = Path(tempfile.mkdtemp(prefix="ai_has_eval_"))
 
 # Isolated, offline, deterministic environment -- must be set before importing the app.
 os.environ["OPENAI_API_KEY"] = ""
+# Offline evaluation must never call a real provider configured in .env.
+os.environ["LLM_PROVIDER"] = "openai"
+os.environ["GEMINI_API_KEY"] = ""
 os.environ["DATABASE_URL"] = f"sqlite:///{(TMP_DIR / 'eval.db').as_posix()}"
 os.environ["CHROMA_PERSIST_DIR"] = str(TMP_DIR / "chroma")
 os.environ["KNOWLEDGE_BASE_DIR"] = str(REPO_ROOT / "knowledge_base")

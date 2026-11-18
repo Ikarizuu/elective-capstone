@@ -19,6 +19,9 @@ KB_DIR = REPO_ROOT / "knowledge_base"
 DATASET_PATH = Path(__file__).resolve().parent / "synthetic_dataset.json"
 
 os.environ["OPENAI_API_KEY"] = ""
+# Never let a developer's real provider key in .env reach the test suite.
+os.environ["LLM_PROVIDER"] = "openai"
+os.environ["GEMINI_API_KEY"] = ""
 os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_TMP_DIR / 'test_ai_has.db').as_posix()}"
 os.environ["CHROMA_PERSIST_DIR"] = str(TEST_TMP_DIR / "chroma")
 os.environ["KNOWLEDGE_BASE_DIR"] = str(KB_DIR)
