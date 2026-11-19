@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, Query
@@ -12,6 +13,19 @@ from app.auth.rbac import AuthenticatedUser, require_roles
 from app.database import AuditLog, ChatSession, MetricRecord, Ticket, WebhookDelivery, get_db
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics & Observability"])
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    """Serialize a stored timestamp as ISO-8601 with an explicit UTC offset.
+
+    SQLite drops tzinfo on read, so naive values are stored UTC and must be tagged
+    before serialization or browsers will misread them as local time.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
 
 
 @router.get("/summary")
@@ -121,7 +135,7 @@ def get_audit_logs(
                 "session_id": log.session_id,
                 "action": log.action,
                 "details": log.details_json or {},
-                "created_at": log.created_at.isoformat() if log.created_at else None,
+                "created_at": _iso_utc(log.created_at),
             }
             for log in logs
         ]

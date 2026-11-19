@@ -34,6 +34,26 @@ import {
 import { useRole } from "@/components/RoleSwitcher";
 import { KpiCharts } from "@/components/KpiCharts";
 
+const PST_FORMATTER = new Intl.DateTimeFormat("en-PH", {
+  timeZone: "Asia/Manila",
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+
+/** Render a backend timestamp in Philippine Standard Time (UTC+8). */
+function formatPST(iso: string): string {
+  // Timestamps without an explicit offset are stored as UTC; tag them so they aren't read as local time.
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  const date = new Date(hasOffset ? iso : `${iso}Z`);
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${PST_FORMATTER.format(date)} PST`;
+}
+
 export default function AdminDashboardPage() {
   const { role, persona, setRole } = useRole();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
@@ -460,7 +480,7 @@ export default function AdminDashboardPage() {
                     </td>
                     <td className="py-2 pr-3 text-slate-800">{log.action}</td>
                     <td className="py-2 font-mono text-[11px] text-slate-500">
-                      {log.created_at ? new Date(log.created_at).toLocaleString() : "—"}
+                      {log.created_at ? formatPST(log.created_at) : "—"}
                     </td>
                   </tr>
                 ))}
